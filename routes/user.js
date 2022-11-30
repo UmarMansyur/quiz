@@ -6,6 +6,8 @@ const { auth } = require('../controllers');
 
 router.post('/register', auth.register);
 router.post('/login', auth.login);
+router.get('/auth/login/google', auth.loginGoogle);
+router.get('/auth/login/facebook', auth.loginFacebook);
 router.get('/saya', middleware.auth, auth.saya);
 
 

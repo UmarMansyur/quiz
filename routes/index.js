@@ -1,10 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const user = require('./user');
+const auth = require('./auth');
 const question = require('./question');
 const answer = require('./answer');
 const history = require('./history');
 const biodata = require('./biodata');
+const user = require('./user');
 
 //capek banget
 router.get('/', (_req, res) => {
@@ -21,7 +22,8 @@ router.get('/', (_req, res) => {
 });
 
 
-router.use('/', user);
+router.use('/', auth);
+router.use('/user', user);
 router.use('/question', question);
 router.use('/answer', answer);
 router.use('/history', history);

@@ -1,14 +1,12 @@
-const express = require('express');
-const router = express.Router();
-const middleware = require('../helpers/middleware');
-const { auth } = require('../controllers');
+const router = require('express').Router();
+const middle = require('../middlewares/authorize');
+const role = require('../utils/roles');
+const controller = require('../controllers');
+const multer = require('multer');
+const upload = multer();
 
-
-router.post('/register', auth.register);
-router.post('/login', auth.login);
-router.get('/auth/login/google', auth.loginGoogle);
-router.get('/auth/login/facebook', auth.loginFacebook);
-router.get('/saya', middleware.auth, auth.saya);
+router.get('/', middle([role.admin, role.user]), controller.user.getProfile);
+router.put('/', middle([role.admin, role.user]), upload.single('thumbnail'), controller.user.updateProfile);
 
 
 module.exports = router;

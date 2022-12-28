@@ -1,12 +1,17 @@
 require("dotenv").config();
-const { user_game } = require("../models");
+const { user_game, user_game_biodata } = require("../models");
+const { QueryTypes, where } = require("sequelize");
+const googleOauth2 = require('../utils/oauth2/google')
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const roles = require('../utils/roles');
+const userType = require('../utils/userTypes');
+
 module.exports = {
   register: async (req, res, next) => {
     try {
-      const { name, password } = req.body;
-      const existUser = await user_game.findOne({ where: { username: name } });
+      const { email, password } = req.body;
+      const existUser = await user_game.findOne({ where: { email } });
       if (existUser) {
         return res.status(422).json({
           jsonapi: {
@@ -22,9 +27,16 @@ module.exports = {
       }
       const encryptedPassword = await bcrypt.hash(password, 10);
       const user = await user_game.create({
-        username: name,
+        email,
+        role: roles.user,
+        userType: userType.basic,
         password: encryptedPassword,
       });
+
+      const detailUser = await user_game_biodata.create({
+        user_id: user.id,
+      });
+
       return res.status(201).json({
         jsonapi: {
           version: "1.0",
@@ -36,7 +48,7 @@ module.exports = {
         status: 201,
         message: "Data berhasil ditambahkan",
         data: {
-          username: user.username,
+          email: user.email,
         },
       });
     } catch (error) {
@@ -45,43 +57,8 @@ module.exports = {
   },
   login: async (req, res, next) => {
     try {
-      const { name, password } = req.body;
-      const user = await user_game.findOne({ where: { username: name } });
-      if (!user) {
-        return res.status(404).json({
-          jsonapi: {
-            version: "1.0",
-          },
-          meta: {
-            author: "Muhammad Umar Mansyur",
-            copyright: "2022 ~ BE JavaScript Binar Academy",
-          },
-          status: 404,
-          message: "User not found",
-        });
-      }
-      const isPasswordValid = await bcrypt.compare(password, user.password);
-      if (!isPasswordValid) {
-        return res.status(401).json({
-          jsonapi: {
-            version: "1.0",
-          },
-          meta: {
-            author: "Muhammad Umar Mansyur",
-            copyright: "2022 ~ BE JavaScript Binar Academy",
-          },
-          status: 401,
-          message: "Password is not valid",
-        });
-      }
-      let payload = {
-        id: user.id,
-        username: user.username,
-        password: user.password,
-      };
-      const token = jwt.sign(payload, process.env.JWT_SECRET, {
-        expiresIn: "1h",
-      });
+      const user = await user_game.authenticate(req.body);
+      const access_token = user.generateToken();
       return res.status(200).json({
         jsonapi: {
           version: "1.0",
@@ -94,16 +71,37 @@ module.exports = {
         message: "Login success",
         data: {
           id: user.id,
-          accessToken: token,
+          email: user.email,
+          role: user.role,
+          token: access_token,
         },
       });
     } catch (error) {
       next(error);
     }
   },
-  saya: (req, res, next) => {
-    const user = req.user_game;
+  saya: async (req, res, next) => {
     try {
+
+
+      const user = await user_game_biodata.findOne(
+        {
+          include: [
+            {
+              model: user_game,
+              as: "user",
+              where: {
+                email: req.user.email
+              }
+            },
+          ],
+        },
+        {
+          where: {
+            user_id: req.user.id
+          }
+        }
+      );
       const result = {
         jsonapi: {
           version: "1.0",
@@ -131,32 +129,58 @@ module.exports = {
 
       await googleOauth2.setCredentials(code);
       const { data } = await googleOauth2.getUserData();
-      // kolom password jika login menggunakan google jadikan tempat email
-      let userExist = await User.findOne({ where: { email: data.password } });
-      let exist = false;
+      let userExist = await user_game.findOne({ where: { email: data.email } });
+
       if (!userExist) {
         userExist = await user_game.create({
-          username: data.name,
-          password: data.email,
+          email: data.email,
+          role: roles.user,
+          userType: userType.google
         });
+        detailUser = await user_game_biodata.create({
+          user_id: userExist.id,
+          nama: data.name,
+          thumbnail: data.picture
+        })
       } else {
-        exist = true;
-        userExist = await User.update(
+        await user_game_biodata.update({
+          thumbnail: data.picture
+        }, {
+          where: {
+            user_id: userExist.id
+          }
+        })
+      };
+
+      const response = await user_game_biodata.findOne({
+        include: [
           {
-            name: data.name,
-            password: data.email,
-          },
-          { where: { password: data.password }, returning: true }
-        );
-      }
-      return res.status(200).json({
-        data: exist == true ? userExist[1][0] : userExist,
+            model: user_game,
+            as: 'user',
+            where: {
+              id: userExist.id
+            }
+          }
+        ]
       });
+
+      const payload = {
+        id: userExist.id,
+        email: userExist.email,
+        role: userExist.role,
+      };
+
+      const token =  jwt.sign(payload, process.env.JWT_SECRET)
+
+      return res.status(200).json({
+        status: true,
+        message: "Data Retrived Successfully",
+        data: token
+      })
     } catch (err) {
       next(err);
     }
   },
-
   loginFacebook: async (req, res, next) => {
     try {
       const code = req.query.code;
@@ -166,7 +190,6 @@ module.exports = {
       }
       const access_token = await facebookOauth2.getAccessToken(code);
       const userInfo = await facebookOauth2.getUserInfo(access_token);
-      console.log(userInfo.picture.data.url);
       res.send(userInfo);
     } catch (err) {
       next(err);
